@@ -1,14 +1,16 @@
-name: Wheels & sdist
+name: Build and publish wheels
 
 on:
   push:
-    branches: [ main ]
-  release:
-    types: [ released, prereleased ]
-  pull_request:  # also build on PRs touching this file
+    tags:
+      - '*'  # Triggers the workflow on version tags
     paths:
       - ".github/workflows/release.yaml"
       - "ci/proj-compile-wheels.sh"
+
+permissions:
+  contents: write
+  actions: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -19,83 +21,25 @@ env:
   DEBIAN_FRONTEND: noninteractive
 
 jobs:
-  make_sdist:
-    name: Make sdist
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Conda
-        uses: mamba-org/setup-micromamba@v2
-        with:
-          init-shell: bash
-          environment-name: sdist_env
-          create-args: >-
-            python-build
-            twine
-            cython
-            proj=${{ matrix.proj-version }}
-
-
-      - name: Make sdist
-        shell: bash
-        run: |
-          micromamba run -n sdist_env python -m build --sdist
-
-      - name: Check packages
-        shell: bash
-        run: |
-          micromamba run -n sdist_env twine check --strict dist/*
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdist
-          path: ./dist/*.tar.gz
-          retention-days: 5
 
   build_wheels:
     name: Build ${{ matrix.arch }} wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ github.event_name == 'push' && github.ref_type != 'tag' }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-        - os: ubuntu-22.04
-          arch: x86_64
-        - os: ubuntu-22.04-arm
-          arch: aarch64
-        - os: macos-13
-          arch: x86_64
-          cmake_osx_architectures: x86_64
-          macos_deployment_target: "13.0"
-        - os: macos-14
-          arch: arm64
-          cmake_osx_architectures: arm64
-          macos_deployment_target: "14.0"
-        - os: "windows-2022"
-          arch: "auto64"
-          triplet: "x64-windows"
+        include:    
+        - os: "windows-11-arm"
+          arch: "ARM64"
+          triplet: "arm64-windows"
           vcpkg_cache: "c:\\vcpkg\\installed"
           vcpkg_logs: "c:\\vcpkg\\buildtrees\\**\\*.log"
-        - os: "windows-2022"
-          arch: "auto32"
-          triplet: "x86-windows"
-          vcpkg_cache: "c:\\vcpkg\\installed"
-          vcpkg_logs: "c:\\vcpkg\\buildtrees\\**\\*.log"
-
+        
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
-
-      - name: Setup MSVC (32-bit)
-        if: ${{ matrix.triplet == 'x86-windows' }}
-        uses: bus1/cabuild/action/msdevshell@e22aba57d6e74891d059d66501b6b5aed8123c4d  # v1
-        with:
-          architecture: 'x86'
-
+     
       - name: Cache vcpkg
         if: contains(matrix.os, 'windows')
         uses: actions/cache@v4
@@ -125,7 +69,7 @@ jobs:
           cp "$VCPKG_INSTALLATION_ROOT/installed/${{ matrix.triplet }}/share/proj/"* ${GITHUB_WORKSPACE}/pyproj/proj_dir/share/proj/
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.23
+        uses: pypa/cibuildwheel@v2.23.3
         env:
           CIBW_SKIP: "pp*-win* pp31*"
           CIBW_ARCHS: ${{ matrix.arch }}
@@ -142,6 +86,7 @@ jobs:
             CMAKE_OSX_ARCHITECTURES='${{ matrix.cmake_osx_architectures }}'
             MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}
             LDFLAGS="${LDFLAGS} -Wl,-rpath,${GITHUB_WORKSPACE}/pyproj/proj_dir/lib"
+          CIBW_CONFIG_SETTINGS_WINDOWS: "setup-args=--vsenv"
           CIBW_ENVIRONMENT_WINDOWS:
             PROJ_WHEEL=true
             PROJ_NETWORK=ON
@@ -152,13 +97,6 @@ jobs:
           CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: "delvewheel repair --add-path C:/Windows/System32 --add-path C:/vcpkg/installed/${{ matrix.triplet }}/bin -w {dest_dir} {wheel}"
           CIBW_BEFORE_ALL_LINUX: bash ./ci/proj-compile-wheels.sh
           CIBW_BEFORE_ALL_MACOS: bash ./ci/proj-compile-wheels.sh
-          CIBW_TEST_REQUIRES: cython pytest numpy --config-settings=setup-args="-Dallow-noblas=true"
-          CIBW_BEFORE_TEST: python -m pip install shapely pandas xarray || echo "Optional requirements install failed"
-          CIBW_TEST_COMMAND: >
-            pyproj -v &&
-            python -c "import pyproj; pyproj.Proj(init='epsg:4269')"  &&
-            cp -r {package}/test . &&
-            python -m pytest test -v -s
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -168,60 +106,27 @@ jobs:
           retention-days: 5
 
   publish:
-    name: Publish on PyPI
-    needs: [make_sdist,build_wheels]
-    if: ${{ github.repository_owner == 'pyproj4' && github.event_name != 'pull_request' }}
+    name: Publish on GitHub
+    needs: [build_wheels]
     runs-on: ubuntu-latest
     steps:
+     
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
       - uses: actions/download-artifact@v4
         with:
-          name: sdist
-          path: dist
-      - uses: actions/download-artifact@v4
-        continue-on-error: ${{ github.event_name == 'push' && github.ref_type != 'tag' }}
-        with:
-          name: wheels-ubuntu-22.04-x86_64
-          path: dist
-      - uses: actions/download-artifact@v4
-        continue-on-error: ${{ github.event_name == 'push' && github.ref_type != 'tag' }}
-        with:
-          name: wheels-ubuntu-22.04-arm-aarch64
-          path: dist
-      - uses: actions/download-artifact@v4
-        continue-on-error: ${{ github.event_name == 'push' && github.ref_type != 'tag' }}
-        with:
-          name: wheels-macos-13-x86_64
-          path: dist
-      - uses: actions/download-artifact@v4
-        continue-on-error: ${{ github.event_name == 'push' && github.ref_type != 'tag' }}
-        with:
-          name: wheels-macos-14-arm64
-          path: dist
-      - uses: actions/download-artifact@v4
-        continue-on-error: ${{ github.event_name == 'push' && github.ref_type != 'tag' }}
-        with:
-          name: wheels-windows-2022-auto64
-          path: dist
-      - uses: actions/download-artifact@v4
-        continue-on-error: ${{ github.event_name == 'push' && github.ref_type != 'tag' }}
-        with:
-          name: wheels-windows-2022-auto32
+          name: wheels-windows-11-arm-ARM64
           path: dist
 
-      - name: Upload Wheels to PyPI
-        # release on every tag
-        if: ${{ github.event_name == 'release' && github.ref_type == 'tag' }}
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
-          skip_existing: true
-          # repository_url: https://test.pypi.org/legacy/  # To test
+          files: dist/*
+          body: |
+            ## Release Notes
+            - Unofficial, open-source Windows 11 ARM wheels
+            - Untested, as testing during the CIBW build doesn’t work on Windows ARM.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-
-      - name: Upload Nightly Wheelsref
-        if : ${{ github.ref_type == 'branch' && github.ref_name == 'main' }}
-        uses: scientific-python/upload-nightly-action@b36e8c0c10dbcfd2e05bf95f17ef8c14fd708dbf
-        with:
-          artifacts_path: dist
-          anaconda_nightly_upload_token: ${{ secrets.ANACONDA_ORG_UPLOAD_TOKEN }}
