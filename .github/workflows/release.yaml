@@ -29,6 +29,22 @@ jobs:
       fail-fast: false
       matrix:
         include:    
+        - os: ubuntu-22.04
+          arch: x86_64
+          
+        - os: ubuntu-22.04-arm
+          arch: aarch64
+        
+        - os: macos-13
+          arch: x86_64
+          cmake_osx_architectures: x86_64
+          macos_deployment_target: "13.0"
+        
+        - os: macos-14
+          arch: arm64
+          cmake_osx_architectures: arm64
+          macos_deployment_target: "14.0"
+          
         - os: "windows-latest"
           arch: "auto64"
           triplet: "x64-windows"
@@ -127,6 +143,26 @@ jobs:
      
       - name: Checkout code
         uses: actions/checkout@v4
+      
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-macos-14-arm64
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-macos-13-x86_64
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-ubuntu-22.04-arm-aarch64
+          path: dist
+      
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-ubuntu-22.04-x86_64
+          path: dist
       
       - uses: actions/download-artifact@v4
         with:
