@@ -1,6 +1,7 @@
 name: Build and publish wheels
 
 on:
+  
   push:
     tags:
       - '*'  # Triggers the workflow on version tags
@@ -29,22 +30,6 @@ jobs:
       fail-fast: false
       matrix:
         include:    
-        - os: ubuntu-22.04
-          arch: x86_64
-          
-        - os: ubuntu-22.04-arm
-          arch: aarch64
-        
-        - os: macos-13
-          arch: x86_64
-          cmake_osx_architectures: x86_64
-          macos_deployment_target: "13.0"
-        
-        - os: macos-14
-          arch: arm64
-          cmake_osx_architectures: arm64
-          macos_deployment_target: "14.0"
-          
         - os: "windows-latest"
           arch: "auto64"
           triplet: "x64-windows"
@@ -119,9 +104,9 @@ jobs:
           CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: "delvewheel repair --add-path C:/Windows/System32 --add-path C:/vcpkg/installed/${{ matrix.triplet }}/bin -w {dest_dir} {wheel}"
           CIBW_BEFORE_ALL_LINUX: bash ./ci/proj-compile-wheels.sh
           CIBW_BEFORE_ALL_MACOS: bash ./ci/proj-compile-wheels.sh
-          CIBW_TEST_REQUIRES: cython pytest numpy --config-settings=setup-args="-Dallow-noblas=true"
-          CIBW_BEFORE_TEST: python -m pip install shapely pandas xarray || echo "Optional requirements install failed"
-          CIBW_TEST_SKIP: "*win_arm64*"
+          CIBW_TEST_REQUIRES: cython pytest numpy==2.3.0rc1 --config-settings=setup-args="-Dallow-noblas=true"
+          #CIBW_BEFORE_TEST: python -m pip install shapely pandas xarray || echo "Optional requirements install failed"
+          #CIBW_TEST_SKIP: "*win_arm64*"
           CIBW_TEST_COMMAND: >
             pyproj -v &&
             python -c "import pyproj; pyproj.Proj(init='epsg:4269')"  &&
@@ -134,52 +119,4 @@ jobs:
           name: wheels-${{ matrix.os }}-${{ matrix.arch }}
           path: ./wheelhouse/*.whl
           retention-days: 5
-
-  publish:
-    name: Publish on GitHub
-    needs: [build_wheels]
-    runs-on: ubuntu-latest
-    steps:
-     
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - uses: actions/download-artifact@v4
-        with:
-          name: wheels-macos-14-arm64
-          path: dist
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: wheels-macos-13-x86_64
-          path: dist
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: wheels-ubuntu-22.04-arm-aarch64
-          path: dist
-      
-      - uses: actions/download-artifact@v4
-        with:
-          name: wheels-ubuntu-22.04-x86_64
-          path: dist
-      
-      - uses: actions/download-artifact@v4
-        with:
-          name: wheels-windows-latest-auto64
-          path: dist
-      
-      - uses: actions/download-artifact@v4
-        with:
-          name: wheels-windows-11-arm-ARM64
-          path: dist
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          body: |
-            Unofficial devel wheels for testing
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
