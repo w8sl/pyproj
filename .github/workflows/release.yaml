@@ -35,13 +35,15 @@ jobs:
           triplet: "x64-windows"
           vcpkg_cache: "c:\\vcpkg\\installed"
           vcpkg_logs: "c:\\vcpkg\\buildtrees\\**\\*.log"
-        
+          msvc_arch: x64
+          
         - os: "windows-11-arm"
           arch: "ARM64"
           triplet: "arm64-windows"
           vcpkg_cache: "c:\\vcpkg\\installed"
           vcpkg_logs: "c:\\vcpkg\\buildtrees\\**\\*.log"
-        
+          msvc_arch: ARM64
+          
     steps:
       - uses: actions/checkout@v4
 
@@ -74,7 +76,13 @@ jobs:
           vcpkg install --feature-flags="versions,manifests" --x-manifest-root=${GITHUB_WORKSPACE}/ci --x-install-root=$VCPKG_INSTALLATION_ROOT/installed
           mkdir -p ${GITHUB_WORKSPACE}/pyproj/proj_dir/share/proj
           cp "$VCPKG_INSTALLATION_ROOT/installed/${{ matrix.triplet }}/share/proj/"* ${GITHUB_WORKSPACE}/pyproj/proj_dir/share/proj/
-
+          
+      - name: Activate MSVC
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+        with:
+          arch: ${{ matrix.msvc_arch }}
+        if: ${{ matrix.msvc_arch }}
+        
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.23.3
         env:
@@ -93,7 +101,6 @@ jobs:
             CMAKE_OSX_ARCHITECTURES='${{ matrix.cmake_osx_architectures }}'
             MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}
             LDFLAGS="${LDFLAGS} -Wl,-rpath,${GITHUB_WORKSPACE}/pyproj/proj_dir/lib"
-          CIBW_CONFIG_SETTINGS_WINDOWS: "setup-args=--vsenv"
           CIBW_ENVIRONMENT_WINDOWS:
             PROJ_WHEEL=true
             PROJ_NETWORK=ON
@@ -105,7 +112,7 @@ jobs:
           CIBW_BEFORE_ALL_LINUX: bash ./ci/proj-compile-wheels.sh
           CIBW_BEFORE_ALL_MACOS: bash ./ci/proj-compile-wheels.sh     
           CIBW_BEFORE_TEST: python -m pip install shapely pandas xarray || echo "Optional requirements install failed"
-          CIBW_TEST_REQUIRES: numpy==2.3.0rc1 cython pytest  --config-settings=setup-args="-Dallow-noblas=true"
+          CIBW_TEST_REQUIRES: numpy cython pytest  --config-settings=setup-args="-Dallow-noblas=true"
           CIBW_TEST_COMMAND: >
             pyproj -v &&
             python -c "import pyproj; pyproj.Proj(init='epsg:4269')"  &&
