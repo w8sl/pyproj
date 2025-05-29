@@ -36,7 +36,6 @@ jobs:
             cython
             proj=${{ matrix.proj-version }}
 
-
       - name: Make sdist
         shell: bash
         run: |
@@ -73,10 +72,17 @@ jobs:
         - os: macos-14
           arch: arm64
           cmake_osx_architectures: arm64
-          macos_deployment_target: "14.0"
-        - os: "windows-2022"
+          macos_deployment_target: "14.0"  
+        - os: "windows-latest"
           arch: "auto64"
+          msvc_arch: x64 
           triplet: "x64-windows"
+          vcpkg_cache: "c:\\vcpkg\\installed"
+          vcpkg_logs: "c:\\vcpkg\\buildtrees\\**\\*.log"                   
+        - os: "windows-11-arm"
+          arch: "ARM64"
+          msvc_arch: ARM64
+          triplet: "arm64-windows"
           vcpkg_cache: "c:\\vcpkg\\installed"
           vcpkg_logs: "c:\\vcpkg\\buildtrees\\**\\*.log"
         - os: "windows-2022"
@@ -96,6 +102,12 @@ jobs:
         with:
           architecture: 'x86'
 
+      - name: Activate MSVC (64-bit)
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+        with:
+          arch: ${{ matrix.msvc_arch }}
+        if: ${{ matrix.msvc_arch }}
+        
       - name: Cache vcpkg
         if: contains(matrix.os, 'windows')
         uses: actions/cache@v4
@@ -125,7 +137,7 @@ jobs:
           cp "$VCPKG_INSTALLATION_ROOT/installed/${{ matrix.triplet }}/share/proj/"* ${GITHUB_WORKSPACE}/pyproj/proj_dir/share/proj/
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.23
+        uses: pypa/cibuildwheel@v2.23.3
         env:
           CIBW_SKIP: "pp*-win* pp31*"
           CIBW_ARCHS: ${{ matrix.arch }}
@@ -201,7 +213,12 @@ jobs:
         continue-on-error: ${{ github.event_name == 'push' && github.ref_type != 'tag' }}
         with:
           name: wheels-windows-2022-auto64
-          path: dist
+          path: dist      
+      - uses: actions/download-artifact@v4
+        continue-on-error: ${{ github.event_name == 'push' && github.ref_type != 'tag' }}
+        with:
+          name: wheels-windows-11-arm-ARM64
+          path: dist  
       - uses: actions/download-artifact@v4
         continue-on-error: ${{ github.event_name == 'push' && github.ref_type != 'tag' }}
         with:
