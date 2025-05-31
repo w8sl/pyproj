@@ -191,7 +191,6 @@ jobs:
           path: dist
       
       - uses: actions/download-artifact@v4
-        continue-on-error: ${{ github.event_name == 'push' && github.ref_type != 'tag' }}
         with:
           pattern: wheels-*
           merge-multiple: true
